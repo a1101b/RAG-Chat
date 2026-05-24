@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RAG Chat</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+
+  <style>
+
+    /* RESET */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* GLOBAL COLOUR AND FONT VARIABLES */
+    :root {
+      --bg: #0e0e10;                          /* MAIN PAGE BACKGROUND */
+      --surface: #18181b;                     /* CARD/BUBBLE BACKGROUND */
+      --border: rgba(255,255,255,0.08);       /* BORDER FOR DARK SURFACES */
+      --border2: rgba(255,255,255,0.14);      /* MORE VISIBLE BORDER */
+      --text: #f0f0f2;                        /* MAIN TEXT COLOUR */
+      --muted: #8a8a96;                       /* SECONDARY TEXT */
+      --accent: #7f77dd;                      /* PURPLE ACCENT */
+      --accent-dim: rgba(127,119,221,0.12);   /* PURPLE HOVER BACKGROUNDS */
+      --user-bg: #26215c;                     /* USER MESSAGE BUBBLE BACKGROUND */
+      --user-text: #cecbf6;                   /* USER MESSAGE TEXT COLOUR */
+      --success-dim: rgba(59,109,17,0.15);    /* GREEN FOR SYSTEM MESSAGES */
+      --error-dim: rgba(163,45,45,0.15);      /* RED FOR ERROR STATES */
+      --error: #f09595;                       /* ERROR TEXT COLOUR */
+      --font-sans: 'IBM Plex Sans', sans-serif;
+      --font-mono: 'IBM Plex Mono', monospace;
+    }
+
+    /* BODY FULL HEIGHT VERTICAL FLEX LAYOUT NO PAGE SCROLL */
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* HEADER TOP BAR, FIXED HEIGHT, NEVER SHRINKS */
+    header {
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    /* LOGO */
+    .logo {
+      width: 32px;
+      height: 32px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 500;
+      color: white;
+      flex-shrink: 0;
+    }
+
+    /* HEADER TITLE AND SUBTITLE TEXT */
+    .header-text h1 { font-size: 15px; font-weight: 500; letter-spacing: -0.01em; }
+    .header-text p { font-size: 12px; color: var(--muted); font-family: var(--font-mono); }
+
+    /* HEADER RIGHT SIDE*/
+    .header-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* UPLOAD BUTTON */
+    .upload-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    /* UPLOAD BUTTON HOVER STATE */
+    .upload-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    /* UPLOAD BUTTON ICON*/
+    .upload-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+    /* HIDDEN FILE INPUT */
+    #file-input { display: none; }
+
+    /* TOAST NOTIFICATION */
+    .upload-toast {
+      position: fixed;
+      bottom: 100px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px); 
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 280px;
+      opacity: 0;              
+      transition: all 0.25s;
+      pointer-events: none;    
+      z-index: 100;
+    }
+
+    /* TOAST VISIBLE STATE */
+    .upload-toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .upload-toast.success { border-color: rgba(59,109,17,0.4); }
+    .upload-toast.error { border-color: rgba(163,45,45,0.4); }
+
+    /* TOAST ICON CIRCLE */
+    .toast-icon {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 12px;
+    }
+
+    /* LOADING STATE */
+    .toast-icon.loading {
+      border: 2px solid var(--border2);
+      border-top-color: var(--accent);
+      animation: spin 0.8s linear infinite;
+    }
+
+    .toast-icon.success { background: var(--success-dim); color: #97c459; }
+    .toast-icon.error { background: var(--error-dim); color: var(--error); }
+
+    /* SPIN KEYFRAME -*/
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .toast-text { flex: 1; }
+    .toast-text strong { display: block; font-weight: 500; margin-bottom: 2px; }
+    .toast-text span { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+
+    /* CHAT AREA */
+    #chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      scroll-behavior: smooth;
+    }
+
+    /* CUSTOM SCROLLBAR STYLING */
+    #chat::-webkit-scrollbar { width: 4px; }
+    #chat::-webkit-scrollbar-track { background: transparent; }
+    #chat::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+    /* MESSAGE WRAPPER */
+    .message {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-width: 80%;
+      animation: fadeUp 0.2s ease;
+    }
+
+    /* FADE UP ANIMATION*/
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* MESSAGE ALIGNMENT*/
+    .message.user { align-self: flex-end; align-items: flex-end; }
+    .message.assistant { align-self: flex-start; align-items: flex-start; }
+    .message.system { align-self: center; align-items: center; max-width: 100%; }
+
+    /* BUBBLE*/
+    .bubble {
+      padding: 0.75rem 1rem;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.65;
+      white-space: pre-wrap; 
+      word-break: break-word;
+    }
+
+    /* USER BUBBLE */
+    .message.user .bubble {
+      background: var(--user-bg);
+      color: var(--user-text);
+      border-bottom-right-radius: 3px;
+    }
+
+    /* ASSISTANT BUBBLE */
+    .message.assistant .bubble {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-bottom-left-radius: 3px;
+    }
+
+    /* SYSTEM MESSAGE*/
+    .message.system .bubble {
+      background: var(--success-dim);
+      border: 1px solid rgba(59,109,17,0.3);
+      color: #97c459;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      text-align: center;
+      border-radius: 8px;
+    }
+
+    /* ERROR BUBBLE */
+    .message.error .bubble {
+      background: var(--error-dim);
+      border: 1px solid rgba(163,45,45,0.3);
+      color: var(--error);
+    }
+
+    /* LABEL*/
+    .label {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      letter-spacing: 0.04em;
+      padding: 0 4px;
+    }
+
+    /* THINKING BUBBLE */
+    .thinking {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0.75rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      border-bottom-left-radius: 3px;
+    }
+
+    /* BOUNCING DOTS INSIDE THINKING BUBBLE */
+    .dot {
+      width: 6px;
+      height: 6px;
+      background: var(--muted);
+      border-radius: 50%;
+      animation: bounce 1.2s infinite;
+    }
+
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+      40% { transform: translateY(-5px); opacity: 1; }
+    }
+
+    /* WELCOME SCREEN*/
+    .welcome {
+      align-self: center;
+      text-align: center;
+      padding: 3rem 1rem;
+      max-width: 400px;
+    }
+
+    .welcome .icon { font-size: 36px; margin-bottom: 1rem; }
+    .welcome h2 { font-size: 18px; font-weight: 500; margin-bottom: 0.5rem; letter-spacing: -0.02em; }
+    .welcome p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+    /* SUGGESTION CHIPS*/
+    .suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 1.5rem;
+    }
+
+    .suggestion {
+      padding: 6px 14px;
+      border: 1px solid var(--border2);
+      border-radius: 20px;
+      font-size: 12px;
+      color: var(--muted);
+      cursor: pointer;
+      background: transparent;
+      font-family: var(--font-sans);
+      transition: all 0.15s;
+    }
+
+    /* SUGGESTION HOVER*/
+    .suggestion:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    /* DRAG AND DROP OVERLAY*/
+    .drop-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(14,14,16,0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      z-index: 50;
+      opacity: 0;              
+      pointer-events: none;  
+      transition: opacity 0.2s;
+    }
+
+    /* OVERLAY VISIBLE STATE*/
+    .drop-overlay.active {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    /* DROP TARGET BOX */
+    .drop-box {
+      width: 280px;
+      height: 180px;
+      border: 2px dashed var(--accent);
+      border-radius: 16px;
+      background: var(--accent-dim);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .drop-box svg { width: 36px; height: 36px; stroke: var(--accent); fill: none; stroke-width: 1.5; }
+    .drop-box p { font-size: 14px; color: var(--accent); font-weight: 500; }
+    .drop-box span { font-size: 12px; color: var(--muted); font-family: var(--font-mono); }
+
+    /* FOOTER*/
+    footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    /* INPUT ROW */
+    .input-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 12px;
+      padding: 8px 8px 8px 14px;
+      transition: border-color 0.15s;
+    }
+
+    /* HIGHLIGHT INPUT ROW BORDER WHEN TEXTAREA IS FOCUSED */
+    .input-row:focus-within { border-color: var(--accent); }
+
+    /* TEXT AREA */
+    textarea {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
+      resize: none; 
+      max-height: 120px;
+      min-height: 22px;
+      overflow-y: auto;
+    }
+
+    textarea::placeholder { color: var(--muted); }
+    textarea::-webkit-scrollbar { width: 3px; }
+    textarea::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+    /* SEND BUTTON*/
+    #send {
+      width: 34px;
+      height: 34px;
+      border-radius: 8px;
+      background: var(--accent);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    #send:hover { opacity: 0.85; }
+    #send:active { transform: scale(0.94); } 
+    #send:disabled { opacity: 0.3; cursor: not-allowed; }
+    #send svg { width: 16px; height: 16px; fill: white; }
+
+    /* HINT TEXT BELOW INPUT*/
+    .hint { font-size: 11px; color: var(--muted); text-align: center; margin-top: 8px; font-family: var(--font-mono); }
+
+  </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">R</div>
+  <div class="header-text">
+    <h1>RAG Chat</h1>
+    <p>document intelligence</p>
+  </div>
+  <div class="header-actions">
+    <!-- UPLOAD BUTTON -->
+    <button class="upload-btn" onclick="document.getElementById('file-input').click()">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+      upload pdf
+    </button>
+    <!-- HIDDEN FILE INPUT ONLY ACCEPTS PDFs -->
+    <input type="file" id="file-input" accept=".pdf" onchange="handleFileSelect(this)" />
+  </div>
+</header>
+
+<!-- DRAG AND DROP OVERLAY -->
+<div class="drop-overlay" id="drop-overlay">
+  <div class="drop-box">
+    <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+    <p>Drop your PDF here</p>
+    <span>release to upload</span>
+  </div>
+</div>
+
+<!-- UPLOAD TOAST  -->
+<div class="upload-toast" id="upload-toast">
+  <div class="toast-icon loading" id="toast-icon"></div>
+  <div class="toast-text">
+    <strong id="toast-title">Uploading...</strong>
+    <span id="toast-sub"></span>
+  </div>
+</div>
+
+<!-- CHAT AREA -->
+<div id="chat">
+  <div class="welcome" id="welcome">
+    <div class="icon">⬡</div>
+    <h2>Ask anything about your documents</h2>
+    <p>Upload a PDF using the button above, or ask a question about your already-indexed documents below.</p>
+    <!-- SUGGESTION CHIPS -->
+    <div class="suggestions">
+      <button class="suggestion" onclick="useSuggestion(this)">What is this document about?</button>
+      <button class="suggestion" onclick="useSuggestion(this)">Summarise the key findings</button>
+      <button class="suggestion" onclick="useSuggestion(this)">What methodology was used?</button>
+      <button class="suggestion" onclick="useSuggestion(this)">What are the main conclusions?</button>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER-->
+<footer>
+  <div class="input-row">
+    <!-- TEXTAREA -->
+    <textarea id="input" placeholder="Ask a question about your documents..." rows="1"></textarea>
+    <!-- SEND BUTTON -->
+    <button id="send" onclick="sendMessage()" title="Send">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M2 12L22 2L15 22L11 13L2 12Z"/></svg>
+    </button>
+  </div>
+  <p class="hint">enter to send &nbsp;·&nbsp; shift+enter for new line &nbsp;·&nbsp; drag & drop pdf anywhere</p>
+</footer>
+
+<script>
+
+  // GRAB REFERENCES TO DOM ELEMENTS WE NEED TO INTERACT WITH
+  const chatEl = document.getElementById('chat');
+  const inputEl = document.getElementById('input');
+  const sendBtn = document.getElementById('send');
+  const dropOverlay = document.getElementById('drop-overlay');
+  const toast = document.getElementById('upload-toast');
+
+  // AUTO RESIZE TEXTAREA AS USER TYPES
+  inputEl.addEventListener('input', () => {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+  });
+
+  // SEND ON ENTER, ALLOW SHIFT+ENTER FOR NEW LINE
+  inputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // DRAG AND DROP - COUNTER NEEDED BECAUSE DRAGLEAVE FIRES ON EVERY CHILD ELEMENTWITHOUT IT THE OVERLAY WOULD FLICKER AS THE CURSOR MOVES OVER CHILD ELEMENTS
+  let dragCounter = 0;
+
+  document.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    dragCounter++;
+    dropOverlay.classList.add('active'); 
+  });
+
+  document.addEventListener('dragleave', () => {
+    dragCounter--;
+    if (dragCounter === 0) dropOverlay.classList.remove('active');
+  });
+
+  document.addEventListener('dragover', (e) => e.preventDefault()); 
+
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dragCounter = 0;
+    dropOverlay.classList.remove('active');
+    const file = e.dataTransfer.files[0]; 
+    if (file) uploadFile(file);
+  });
+
+  // CALLED WHEN USER SELECTS A FILE VIA THE UPLOAD BUTTON
+  function handleFileSelect(input) {
+    const file = input.files[0];
+    if (file) uploadFile(file);
+    input.value = ''; 
+  }
+
+  // SHOW TOAST NOTIFICATION 
+  function showToast(state, title, sub) {
+    const icon = document.getElementById('toast-icon');
+    const titleEl = document.getElementById('toast-title');
+    const subEl = document.getElementById('toast-sub');
+
+    icon.className = `toast-icon ${state}`;
+    icon.textContent = state === 'success' ? '✓' : state === 'error' ? '✕' : '';
+    titleEl.textContent = title;
+    subEl.textContent = sub || '';
+    toast.className = `upload-toast show ${state !== 'loading' ? state : ''}`;
+
+    if (state !== 'loading') {
+      setTimeout(() => toast.classList.remove('show'), 3500);
+    }
+  }
+
+  // UPLOAD FILE TO THE FASTAPI /upload ENDPOINT
+  async function uploadFile(file) {
+
+    // VALIDATE FILE TYPE BEFORE SENDING
+    if (!file.name.endsWith('.pdf')) {
+      showToast('error', 'Invalid file type', 'Only PDF files are supported');
+      return;
+    }
+
+    showToast('loading', `Uploading ${file.name}`, 'indexing document...');
+
+    // FORMDATA IS REQUIRED FOR FILE UPLOADS
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.detail || 'Upload failed');
+
+      // SHOW SUCCESS WITH PAGE AND CHUNK COUNT FROM THE SERVER RESPONSE
+      showToast('success', 'Document indexed', `${data.pages} pages · ${data.chunks} chunks`);
+      addSystemMessage(`Indexed: ${file.name} — ${data.pages} pages, ${data.chunks} chunks ready to query`);
+    } catch (err) {
+      showToast('error', 'Upload failed', err.message);
+    }
+  }
+
+  // SUGGESTION CHIP CLICKED
+  function useSuggestion(btn) {
+    inputEl.value = btn.textContent;
+    inputEl.dispatchEvent(new Event('input'));
+    sendMessage();
+  }
+
+  // REMOVE THE WELCOME SCREEN
+  function removeWelcome() {
+    const w = document.getElementById('welcome');
+    if (w) w.remove();
+  }
+
+  // ADD A USER OR ASSISTANT MESSAGE BUBBLE TO THE CHAT
+  function addMessage(role, text, isError = false) {
+    removeWelcome();
+    const msg = document.createElement('div');
+    msg.className = `message ${role}${isError ? ' error' : ''}`;
+
+    // LABEL SHOWS 'you' FOR USER AND 'rag' FOR ASSISTANT
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = role === 'user' ? 'you' : 'rag';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = text;
+
+    msg.appendChild(label);
+    msg.appendChild(bubble);
+    chatEl.appendChild(msg);
+    chatEl.scrollTop = chatEl.scrollHeight; 
+    return msg;
+  }
+
+  // ADD A CENTRED GREEN SYSTEM MESSAGE
+  function addSystemMessage(text) {
+    removeWelcome();
+    const msg = document.createElement('div');
+    msg.className = 'message system';
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = text;
+    msg.appendChild(bubble);
+    chatEl.appendChild(msg);
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
+  // ADD BOUNCING DOTS WHILE WAITING FOR API RESPONSE
+  function addThinking() {
+    removeWelcome();
+    const msg = document.createElement('div');
+    msg.className = 'message assistant';
+
+    const label = document.createElement('div');
+    label.className = 'label';
+    label.textContent = 'rag';
+
+    const thinking = document.createElement('div');
+    thinking.className = 'thinking';
+    thinking.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+
+    msg.appendChild(label);
+    msg.appendChild(thinking);
+    chatEl.appendChild(msg);
+    chatEl.scrollTop = chatEl.scrollHeight;
+    return msg;
+  }
+
+  // MAIN SEND FUNCTION 
+  async function sendMessage() {
+    const question = inputEl.value.trim();
+    if (!question) return; // DO NOTHING IF INPUT IS EMPTY
+
+    // CLEAR INPUT AND DISABLE SEND BUTTON WHILE WAITING
+    inputEl.value = '';
+    inputEl.style.height = 'auto';
+    sendBtn.disabled = true;
+
+    addMessage('user', question);
+    const thinking = addThinking(); 
+
+    try {
+      // SEND QUESTION TO FASTAPI /ask ENDPOINT AS JSON
+      const res = await fetch('/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question })
+      });
+
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const data = await res.json();
+
+      thinking.remove(); 
+      addMessage('assistant', data.answer); 
+    } catch (err) {
+      thinking.remove();
+      addMessage('assistant', `Something went wrong: ${err.message}`, true); 
+    } finally {
+      // ALWAYS RE-ENABLE SEND BUTTON WHETHER REQUEST SUCCEEDED OR FAILED
+      sendBtn.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+</script>
+</body>
+</html>
